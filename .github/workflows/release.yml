@@ -214,6 +214,12 @@ jobs:
       DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # REHEARSAL fidelity: the real attach-assets checks out (for git-cliff notes);
+      # gh release upload also needs a repo context. Mirror it.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: extension-chrome
