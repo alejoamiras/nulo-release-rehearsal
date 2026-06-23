@@ -1,0 +1,342 @@
+name: release
+
+# REHEARSAL transform of the real nulo release.yml. Faithful job graph
+# (needs/if/outputs/env preserved) for the orchestration jobs we're testing —
+# release-please, auto-unstick, resolve, attach-assets, sync, status. The heavy
+# jobs (lint/test/build/smoke/deploys/verify) are stubbed to echo+exit 0 but keep
+# their exact needs/if so the DAG + skip-propagation are real. App token swapped
+# for GITHUB_TOKEN (no App installed here); ./.github/actions/setup-bun swapped
+# for oven-sh/setup-bun@v2.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Re-publish for an existing tag (e.g. v0.2.0). Skips release-please."
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+      run_network_e2e:
+        required: false
+        type: boolean
+        default: false
+      publish_marketplaces:
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      # REHEARSAL: no App token — release-please-action defaults to GITHUB_TOKEN.
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main
+
+  auto-unstick:
+    needs: release-please
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      needs.release-please.outputs.release_created != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      unstuck: ${{ steps.u.outputs.unstuck }}
+      tag_name: ${{ steps.u.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: oven-sh/setup-bun@v2
+      - id: u
+        env:
+          AUTO_UNSTICK_ENABLED: ${{ vars.AUTO_UNSTICK_ENABLED }}
+          RELEASE_CREATED: ${{ needs.release-please.outputs.release_created }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun scripts/release/auto-unstick-run.ts
+
+  resolve:
+    needs: [release-please, auto-unstick]
+    if: |
+      always() &&
+      (needs.release-please.outputs.release_created == 'true'
+        || needs.auto-unstick.outputs.unstuck == 'true'
+        || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      tag: ${{ steps.r.outputs.tag }}
+      version: ${{ steps.r.outputs.version }}
+      sha: ${{ steps.r.outputs.sha }}
+      is_prerelease: ${{ steps.r.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - id: r
+        env:
+          TAG_FROM_PLEASE: ${{ needs.release-please.outputs.tag_name }}
+          TAG_FROM_UNSTICK: ${{ needs.auto-unstick.outputs.tag_name }}
+          TAG_FROM_INPUT: ${{ github.event.inputs.tag }}
+          IS_PUSH: ${{ github.event_name == 'push' }}
+        run: |
+          if [ "$IS_PUSH" = "true" ]; then
+            TAG="${TAG_FROM_PLEASE:-$TAG_FROM_UNSTICK}"
+          else
+            TAG="$TAG_FROM_INPUT"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::error::no tag resolved"
+            exit 1
+          fi
+          if ! git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG not found in repo"
+            exit 1
+          fi
+          SHA=$(git rev-list -n 1 "$TAG")
+          VERSION="${TAG#v}"
+          IS_PRE="false"
+          case "$VERSION" in *-*) IS_PRE="true" ;; esac
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "sha=$SHA"
+            echo "is_prerelease=$IS_PRE"
+          } >> "$GITHUB_OUTPUT"
+
+  # ---- STUBBED publish chain (echo+exit 0; needs/if preserved) ----
+  lint-and-typecheck:
+    needs: resolve
+    if: always() && needs.resolve.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB lint-and-typecheck for ${{ needs.resolve.outputs.tag }}"
+
+  unit-tests:
+    needs: resolve
+    if: always() && needs.resolve.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB unit-tests for ${{ needs.resolve.outputs.tag }}"
+
+  network-e2e:
+    needs: resolve
+    if: |
+      always() &&
+      needs.resolve.result == 'success' &&
+      (
+        (needs.resolve.outputs.is_prerelease == 'false' && github.event_name == 'push') ||
+        github.event.inputs.run_network_e2e == 'true'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB network-e2e for ${{ needs.resolve.outputs.tag }}"
+
+  build-chrome:
+    needs: [resolve, lint-and-typecheck, unit-tests]
+    if: always() && needs.resolve.result == 'success' && needs.lint-and-typecheck.result == 'success' && needs.unit-tests.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p out && echo "dummy chrome ${{ needs.resolve.outputs.version }}" > out/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-chrome
+          path: out
+
+  build-firefox:
+    needs: [resolve, lint-and-typecheck, unit-tests]
+    if: always() && needs.resolve.result == 'success' && needs.lint-and-typecheck.result == 'success' && needs.unit-tests.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p out && echo "dummy firefox ${{ needs.resolve.outputs.version }}" > out/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-firefox
+          path: out
+
+  smoke-against-artifact:
+    needs: [resolve, build-chrome]
+    if: always() && needs.resolve.result == 'success' && needs.build-chrome.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB smoke for ${{ needs.resolve.outputs.tag }}"
+
+  attach-assets:
+    needs: [resolve, lint-and-typecheck, unit-tests, network-e2e, build-chrome, build-firefox, smoke-against-artifact]
+    if: |
+      always() &&
+      needs.resolve.result == 'success' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-chrome
+          path: dist/chrome
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-firefox
+          path: dist/firefox
+      - name: Zip + checksums + attach to the release
+        if: env.DRY_RUN != 'true'
+        run: |
+          mkdir -p dist/release
+          (cd dist/chrome && zip -r "../release/nulo-chrome-${VERSION}.zip" .)
+          (cd dist/firefox && zip -r "../release/nulo-firefox-${VERSION}.zip" .)
+          cd dist/release && sha256sum nulo-*.zip > SHASUMS256.txt
+          gh release upload "$TAG" \
+            "nulo-chrome-${VERSION}.zip" "nulo-firefox-${VERSION}.zip" SHASUMS256.txt --clobber
+          gh release edit "$TAG" --notes "Rehearsal release $VERSION — assets attached by the publish chain."
+          echo "attached assets to $TAG"
+
+  # ---- STUBBED deploys + verify (echo; needs/if preserved) ----
+  refresh-landing:
+    needs: [resolve, attach-assets]
+    if: |
+      needs.resolve.outputs.is_prerelease == 'false' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.event.inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB refresh-landing for ${{ needs.resolve.outputs.tag }}"
+
+  deploy-faucet:
+    needs: [resolve, attach-assets]
+    if: |
+      needs.resolve.outputs.is_prerelease == 'false' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.event.inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB deploy-faucet for ${{ needs.resolve.outputs.tag }}"
+
+  verify-live:
+    needs: [resolve, attach-assets, refresh-landing, deploy-faucet]
+    if: |
+      always() &&
+      needs.resolve.outputs.is_prerelease == 'false' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.event.inputs.dry_run != 'true' &&
+      needs.attach-assets.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "STUB verify-live for ${{ needs.resolve.outputs.tag }}"
+
+  sync-main-to-dev:
+    needs: [resolve, attach-assets]
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      needs.resolve.outputs.is_prerelease == 'false' &&
+      needs.attach-assets.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # REHEARSAL: GITHUB_TOKEN (no App). Repo setting "allow Actions to create
+      # PRs" is enabled so gh pr create works; checkout persists GITHUB_TOKEN for
+      # the branch push.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - name: Open the main→dev sync PR
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_PRERELEASE: ${{ needs.resolve.outputs.is_prerelease }}
+          HEAD_SHA: ${{ github.sha }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun scripts/release/open-sync-pr-run.ts
+
+  status:
+    name: status
+    if: always()
+    needs:
+      [
+        release-please,
+        auto-unstick,
+        resolve,
+        lint-and-typecheck,
+        unit-tests,
+        network-e2e,
+        build-chrome,
+        build-firefox,
+        smoke-against-artifact,
+        attach-assets,
+        refresh-landing,
+        deploy-faucet,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Aggregate results
+        run: |
+          for r in \
+            "${{ needs.release-please.result }}" \
+            "${{ needs.auto-unstick.result }}" \
+            "${{ needs.resolve.result }}" \
+            "${{ needs.lint-and-typecheck.result }}" \
+            "${{ needs.unit-tests.result }}" \
+            "${{ needs.network-e2e.result }}" \
+            "${{ needs.build-chrome.result }}" \
+            "${{ needs.build-firefox.result }}" \
+            "${{ needs.smoke-against-artifact.result }}" \
+            "${{ needs.attach-assets.result }}" \
+            "${{ needs.refresh-landing.result }}" \
+            "${{ needs.deploy-faucet.result }}" \
+          ; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A release stage failed or was cancelled: $r"
+              exit 1
+            fi
+          done
+          echo "Release pipeline completed."
