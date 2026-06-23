@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.3.0...v0.4.0) (2026-06-23)
+
+
+### Features
+
+* trigger 0.4.0 to re-test the main-&gt;dev sync ([b29a9f8](https://github.com/alejoamiras/nulo-release-rehearsal/commit/b29a9f8b0159d110b435f0bf2399a3a60ae08565))
+
 ## [0.3.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.2.0...v0.3.0) (2026-06-23)
 
 
