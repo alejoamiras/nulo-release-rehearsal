@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.4.0...v0.5.0) (2026-06-23)
+
+
+### Features
+
+* trigger 0.5.0 to test the sync CONFLICT path ([519271e](https://github.com/alejoamiras/nulo-release-rehearsal/commit/519271e6edda948a0c889a10ae0c9b2401b0a894))
+
 ## [0.4.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.3.0...v0.4.0) (2026-06-23)
 
 
