@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0-rc.1](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.6.0-rc.0...v0.6.0-rc.1) (2026-06-30)
+
+
+### Features
+
+* post-rc.0 work item C ([#13](https://github.com/alejoamiras/nulo-release-rehearsal/issues/13)) ([22baedd](https://github.com/alejoamiras/nulo-release-rehearsal/commit/22baeddddcd3702c6c70ef596d24db546f496fcf))
+
 ## [0.6.0-rc.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.5.0...v0.6.0-rc.0) (2026-06-30)
 
 
