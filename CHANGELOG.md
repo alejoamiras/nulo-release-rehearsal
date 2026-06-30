@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.5.0...v0.6.0) (2026-06-30)
+
+
+### Features
+
+* post-0.5.0 work item A ([2a6e075](https://github.com/alejoamiras/nulo-release-rehearsal/commit/2a6e075409f127915317638729f99ca84c56e914))
+* **rehearsal:** add relocated apps/extension extra-files + stub (restructure release-path test) ([ddf5409](https://github.com/alejoamiras/nulo-release-rehearsal/commit/ddf5409c77a5358d7fbf1a559e6c14ea82f3cf3c))
+* relocate extension to apps/ (mirror restructure) ([847913e](https://github.com/alejoamiras/nulo-release-rehearsal/commit/847913ec2f81fc041ac741e8eb448cb1bd1ba1d8))
+
+
+### Bug Fixes
+
+* post-0.5.0 fix item B ([24b42c1](https://github.com/alejoamiras/nulo-release-rehearsal/commit/24b42c1fc394dc41f7821a32319672ef1c054160))
+
 ## [0.6.0-rc.0](https://github.com/alejoamiras/nulo-release-rehearsal/compare/v0.5.0...v0.6.0-rc.0) (2026-06-30)
 
 
