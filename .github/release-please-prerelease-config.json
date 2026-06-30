@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "bump-minor-pre-major": true,
+      "prerelease": true,
+      "prerelease-type": "rc.0",
+      "versioning": "prerelease",
+      "extra-files": [{ "type": "json", "path": "apps/extension/package.json", "jsonpath": "$.version" }]
+    }
+  },
+  "pull-request-title-pattern": "chore${scope}: release${component} ${version}",
+  "group-pull-request-title-pattern": "chore${scope}: release${component} ${version}",
+  "separate-pull-requests": false
+}
